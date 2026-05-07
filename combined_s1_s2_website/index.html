@@ -140,6 +140,7 @@ tr:hover td { background: var(--s2); }
     <div class="badges" id="badges"></div>
   </div>
 
+  <div class="vtrow" id="riskTabs"></div>
   <div class="vtrow" id="modelTabs"></div>
 
   <div class="fbar" id="fbar">
@@ -223,7 +224,7 @@ tr:hover td { background: var(--s2); }
 </div>
 <script>
 const ROOT = window.COMBINED_REPORT_DATA || {};
-const VARIANTS = ROOT.variants || {};
+const SCENARIOS = ROOT.scenarios || {};
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const WD  = ['Mon','Tue','Wed','Thu','Fri'];
 
@@ -240,14 +241,48 @@ function emptyPayload(){
   return { portfolioConfig:{}, summary:{initialCapital:0}, dayStats:[], trades:[], dateRange:{min:'',max:''} };
 }
 
-if(!Object.keys(VARIANTS).length){
-  VARIANTS.capped = emptyPayload();
+function scenarioLabel(id, scenario){
+  if(scenario && typeof scenario.label === 'string' && scenario.label.trim()) return scenario.label;
+  return id === '2l_5pct' ? '2L - 5% Risk' : '2L - 3% Risk';
+}
+
+function normalizeScenario(raw){
+  const variants = (raw && typeof raw === 'object' && raw.variants && typeof raw.variants === 'object') ? raw.variants : {};
+  return {
+    label: (raw && typeof raw.label === 'string') ? raw.label : '',
+    variants: {
+      capped: variants.capped || emptyPayload(),
+      uncapped: variants.uncapped || emptyPayload(),
+    },
+  };
+}
+
+if(!Object.keys(SCENARIOS).length){
+  const legacyVariants = ROOT.variants && typeof ROOT.variants === 'object' ? ROOT.variants : {};
+  SCENARIOS['2l_3pct'] = {
+    label: '2L - 3% Risk',
+    variants: {
+      capped: legacyVariants.capped || emptyPayload(),
+      uncapped: legacyVariants.uncapped || emptyPayload(),
+    },
+  };
+}
+
+Object.keys(SCENARIOS).forEach(k => {
+  SCENARIOS[k] = normalizeScenario(SCENARIOS[k]);
+});
+
+if(!Object.keys(SCENARIOS).length){
+  SCENARIOS['2l_3pct'] = normalizeScenario({ label: '2L - 3% Risk', variants: {} });
 }
 
 const APP={
-  variant:(typeof ROOT.defaultVariant==='string'&&VARIANTS[ROOT.defaultVariant])
+  scenario:(typeof ROOT.defaultScenario==='string'&&SCENARIOS[ROOT.defaultScenario])
+    ? ROOT.defaultScenario
+    : (Object.keys(SCENARIOS)[0]||'2l_3pct'),
+  variant:(typeof ROOT.defaultVariant==='string'&&ROOT.defaultVariant)
     ? ROOT.defaultVariant
-    : (Object.keys(VARIANTS)[0]||'capped'),
+    : 'capped',
 };
 
 let RAW=emptyPayload();
@@ -256,6 +291,11 @@ let trades=[];
 let DR={};
 let ST=null;
 let eqChart=null, barChart=null;
+
+function activeVariants(){
+  const scenario = SCENARIOS[APP.scenario] || normalizeScenario({});
+  return scenario.variants || { capped: emptyPayload(), uncapped: emptyPayload() };
+}
 
 function variantLabel(id,payload){
   const cfg=(payload&&payload.portfolioConfig)||{};
@@ -313,7 +353,9 @@ function initState(resetSelection){
 }
 
 function loadVariant(resetSelection){
-  RAW=VARIANTS[APP.variant]||emptyPayload();
+  const variants = activeVariants();
+  if(!variants[APP.variant]) APP.variant = 'capped';
+  RAW=variants[APP.variant]||emptyPayload();
   days=parseDays(RAW);
   trades=parseTrades(RAW);
   DR=RAW.dateRange||{};
@@ -403,14 +445,30 @@ function summarize(rows){
 
 function kc(k,v,s,cls){ return `<div class="kc ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||''}</div></div>`; }
 
+function renderRiskTabs(){
+  const box=document.getElementById('riskTabs');
+  const ordered=['2l_3pct','2l_5pct'];
+  const keys=[...new Set([...ordered,...Object.keys(SCENARIOS)])].filter(k=>SCENARIOS[k]);
+  box.innerHTML=keys.map(k=>`<button data-s="${k}" class="fb ${APP.scenario===k?'sel':''}">${scenarioLabel(k,SCENARIOS[k])}</button>`).join('');
+  box.querySelectorAll('[data-s]').forEach(b=>b.addEventListener('click',()=>{
+    const s=b.dataset.s;
+    if(!s||!SCENARIOS[s]||s===APP.scenario) return;
+    APP.scenario=s;
+    APP.variant='capped';
+    loadVariant(true);
+    upd();
+  }));
+}
+
 function renderModelTabs(){
   const box=document.getElementById('modelTabs');
   const ordered=['capped','uncapped'];
-  const keys=[...new Set([...ordered,...Object.keys(VARIANTS)])].filter(k=>VARIANTS[k]);
-  box.innerHTML=keys.map(k=>`<button data-v="${k}" class="fb ${APP.variant===k?'sel':''}">${variantLabel(k,VARIANTS[k])}</button>`).join('');
+  const variants=activeVariants();
+  const keys=[...new Set([...ordered,...Object.keys(variants)])].filter(k=>variants[k]);
+  box.innerHTML=keys.map(k=>`<button data-v="${k}" class="fb ${APP.variant===k?'sel':''}">${variantLabel(k,variants[k])}</button>`).join('');
   box.querySelectorAll('[data-v]').forEach(b=>b.addEventListener('click',()=>{
     const v=b.dataset.v;
-    if(!v||!VARIANTS[v]||v===APP.variant) return;
+    if(!v||!variants[v]||v===APP.variant) return;
     APP.variant=v;
     loadVariant(true);
     upd();
@@ -421,8 +479,9 @@ function renderHeader(){
   const cfg=RAW.portfolioConfig||{};
   const lev=cfg.strategyLeverageSplit||{};
   const brokerageText=variantLabel(APP.variant,RAW);
+  const scenarioText=scenarioLabel(APP.scenario,SCENARIOS[APP.scenario]);
   document.getElementById('sub').textContent=
-    `Combined S1+S2 | Flat (No Compounding) | Brokerage ${brokerageText} | Capital \u20b9${new Intl.NumberFormat('en-IN').format(n(cfg.capital))} | Daily Risk ${(n(cfg.dailyRiskPct)*100).toFixed(2)}% | S1 ${lev.s1||0}x | S2 ${lev.s2||0}x`;
+    `Combined S1+S2 | Flat (No Compounding) | Mode ${scenarioText} | Brokerage ${brokerageText} | Capital \u20b9${new Intl.NumberFormat('en-IN').format(n(cfg.capital))} | Daily Risk ${(n(cfg.dailyRiskPct)*100).toFixed(2)}% | S1 ${lev.s1||0}x | S2 ${lev.s2||0}x`;
   document.getElementById('badges').innerHTML=
     ['S1: 30% EOD (E8)','S2: 70% EOD (E4)','Shared daily SL risk','Qty = min(SL risk, cap)',`Generated: ${cfg.generatedAt||''}`]
     .map(t=>`<span class="badge">${t}</span>`).join('');
@@ -604,6 +663,7 @@ function upd(){
   const st=summarize(rows);
   const tr=ftrades();
 
+  renderRiskTabs();
   renderModelTabs();
   renderHeader();
   renderYbar();
