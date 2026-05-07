@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="report_data.js?v=20260507071255"></script>
+<script src="report_data.js?v=20260507072013"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -253,6 +253,7 @@ function normalizeScenario(raw){
     variants: {
       capped: variants.capped || emptyPayload(),
       uncapped: variants.uncapped || emptyPayload(),
+      brokerage_only: variants.brokerage_only || emptyPayload(),
     },
   };
 }
@@ -264,6 +265,7 @@ if(!Object.keys(SCENARIOS).length){
     variants: {
       capped: legacyVariants.capped || emptyPayload(),
       uncapped: legacyVariants.uncapped || emptyPayload(),
+      brokerage_only: legacyVariants.brokerage_only || emptyPayload(),
     },
   };
 }
@@ -294,13 +296,14 @@ let eqChart=null, barChart=null;
 
 function activeVariants(){
   const scenario = SCENARIOS[APP.scenario] || normalizeScenario({});
-  return scenario.variants || { capped: emptyPayload(), uncapped: emptyPayload() };
+  return scenario.variants || { capped: emptyPayload(), uncapped: emptyPayload(), brokerage_only: emptyPayload() };
 }
 
 function variantLabel(id,payload){
   const cfg=(payload&&payload.portfolioConfig)||{};
   const bm=cfg.brokerageModel||{};
   if(String(bm.label||'').trim()) return String(bm.label);
+  if(id==='brokerage_only') return 'Only brokerage (no government charges)';
   return id==='uncapped' ? '0.03% per order uncapped' : '0.03% per order with Rs 20 cap';
 }
 
@@ -454,7 +457,8 @@ function renderRiskTabs(){
     const s=b.dataset.s;
     if(!s||!SCENARIOS[s]||s===APP.scenario) return;
     APP.scenario=s;
-    APP.variant='capped';
+    const nextVariants=(SCENARIOS[s]&&SCENARIOS[s].variants)||{};
+    if(!nextVariants[APP.variant]) APP.variant='capped';
     loadVariant(true);
     upd();
   }));
@@ -462,7 +466,7 @@ function renderRiskTabs(){
 
 function renderModelTabs(){
   const box=document.getElementById('modelTabs');
-  const ordered=['capped','uncapped'];
+  const ordered=['capped','uncapped','brokerage_only'];
   const variants=activeVariants();
   const keys=[...new Set([...ordered,...Object.keys(variants)])].filter(k=>variants[k]);
   box.innerHTML=keys.map(k=>`<button data-v="${k}" class="fb ${APP.variant===k?'sel':''}">${variantLabel(k,variants[k])}</button>`).join('');
