@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="report_data.js?v=20260507072013"></script>
+<script src="report_data.js?v=20260507074040"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -227,6 +227,7 @@ const ROOT = window.COMBINED_REPORT_DATA || {};
 const SCENARIOS = ROOT.scenarios || {};
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const WD  = ['Mon','Tue','Wed','Thu','Fri'];
+const VARIANT_ORDER = ['r03_capped','r03_uncapped','r04_capped','r04_uncapped','r05_capped','r05_uncapped'];
 
 function n(v){ const x=Number(v||0); return isFinite(x)?x:0; }
 function rs(v){
@@ -251,9 +252,12 @@ function normalizeScenario(raw){
   return {
     label: (raw && typeof raw.label === 'string') ? raw.label : '',
     variants: {
-      capped: variants.capped || emptyPayload(),
-      uncapped: variants.uncapped || emptyPayload(),
-      brokerage_only: variants.brokerage_only || emptyPayload(),
+      r03_capped: variants.r03_capped || variants.capped || emptyPayload(),
+      r03_uncapped: variants.r03_uncapped || variants.uncapped || emptyPayload(),
+      r04_capped: variants.r04_capped || emptyPayload(),
+      r04_uncapped: variants.r04_uncapped || emptyPayload(),
+      r05_capped: variants.r05_capped || emptyPayload(),
+      r05_uncapped: variants.r05_uncapped || emptyPayload(),
     },
   };
 }
@@ -263,9 +267,12 @@ if(!Object.keys(SCENARIOS).length){
   SCENARIOS['2l_3pct'] = {
     label: '2L - 3% Risk',
     variants: {
-      capped: legacyVariants.capped || emptyPayload(),
-      uncapped: legacyVariants.uncapped || emptyPayload(),
-      brokerage_only: legacyVariants.brokerage_only || emptyPayload(),
+      r03_capped: legacyVariants.r03_capped || legacyVariants.capped || emptyPayload(),
+      r03_uncapped: legacyVariants.r03_uncapped || legacyVariants.uncapped || emptyPayload(),
+      r04_capped: legacyVariants.r04_capped || emptyPayload(),
+      r04_uncapped: legacyVariants.r04_uncapped || emptyPayload(),
+      r05_capped: legacyVariants.r05_capped || emptyPayload(),
+      r05_uncapped: legacyVariants.r05_uncapped || emptyPayload(),
     },
   };
 }
@@ -284,7 +291,7 @@ const APP={
     : (Object.keys(SCENARIOS)[0]||'2l_3pct'),
   variant:(typeof ROOT.defaultVariant==='string'&&ROOT.defaultVariant)
     ? ROOT.defaultVariant
-    : 'capped',
+    : 'r03_capped',
 };
 
 let RAW=emptyPayload();
@@ -296,15 +303,26 @@ let eqChart=null, barChart=null;
 
 function activeVariants(){
   const scenario = SCENARIOS[APP.scenario] || normalizeScenario({});
-  return scenario.variants || { capped: emptyPayload(), uncapped: emptyPayload(), brokerage_only: emptyPayload() };
+  return scenario.variants || {
+    r03_capped: emptyPayload(),
+    r03_uncapped: emptyPayload(),
+    r04_capped: emptyPayload(),
+    r04_uncapped: emptyPayload(),
+    r05_capped: emptyPayload(),
+    r05_uncapped: emptyPayload(),
+  };
 }
 
 function variantLabel(id,payload){
   const cfg=(payload&&payload.portfolioConfig)||{};
   const bm=cfg.brokerageModel||{};
   if(String(bm.label||'').trim()) return String(bm.label);
-  if(id==='brokerage_only') return 'Only brokerage (no government charges)';
-  return id==='uncapped' ? '0.03% per order uncapped' : '0.03% per order with Rs 20 cap';
+  if(id==='r03_uncapped') return '0.03% per order uncapped';
+  if(id==='r04_capped') return '0.04% per order with Rs 20 cap';
+  if(id==='r04_uncapped') return '0.04% per order uncapped';
+  if(id==='r05_capped') return '0.05% per order with Rs 20 cap';
+  if(id==='r05_uncapped') return '0.05% per order uncapped';
+  return '0.03% per order with Rs 20 cap';
 }
 
 function parseDays(raw){
@@ -317,6 +335,7 @@ function parseDays(raw){
       dayName:DOW[dt.getDay()],
       signals:n(r.signals), trades:n(r.trades), wins:n(r.wins), losses:n(r.losses),
       pnl:n(r.pnl), gross:n(r.gross), charges:n(r.charges),
+      brokerage:n(r.brokerage), governmentCharges:n(r.governmentCharges),
       riskBudget:n(r.riskBudget), equity:n(r.equity),
     };
   }).filter(Boolean).sort((a,b)=>a.dt-b.dt);
@@ -357,7 +376,9 @@ function initState(resetSelection){
 
 function loadVariant(resetSelection){
   const variants = activeVariants();
-  if(!variants[APP.variant]) APP.variant = 'capped';
+  if(!variants[APP.variant]){
+    APP.variant = VARIANT_ORDER.find(k=>variants[k]) || Object.keys(variants).find(k=>variants[k]) || 'r03_capped';
+  }
   RAW=variants[APP.variant]||emptyPayload();
   days=parseDays(RAW);
   trades=parseTrades(RAW);
@@ -401,6 +422,8 @@ function summarize(rows){
   const w=rows.reduce((s,r)=>s+r.wins,0), l=rows.reduce((s,r)=>s+r.losses,0);
   const net=rows.reduce((s,r)=>s+r.pnl,0);
   const gross=rows.reduce((s,r)=>s+r.gross,0);
+  const brk=rows.reduce((s,r)=>s+r.brokerage,0);
+  const gov=rows.reduce((s,r)=>s+r.governmentCharges,0);
   const chg=rows.reduce((s,r)=>s+r.charges,0);
   const wd=rows.filter(r=>r.pnl>0).length, ld=rows.filter(r=>r.pnl<0).length;
   const avg=tot?net/tot:0;
@@ -440,7 +463,7 @@ function summarize(rows){
     tot,wins:w,losses:l,
     wrT:w+l?(w/(w+l))*100:0,
     wd,ld,wrD:tot?(wd/tot)*100:0,
-    net,gross,chg,avg,mpd,mld,
+    net,gross,brk,gov,chg,avg,mpd,mld,
     mw,ml,mdc:Math.max(mw,ml),aw,al,rr,xp,fc,roc,pf,mdd,eq,ms,ds,mlr,
     totalTrades:rows.reduce((s,r)=>s+r.trades,0),
   };
@@ -458,7 +481,9 @@ function renderRiskTabs(){
     if(!s||!SCENARIOS[s]||s===APP.scenario) return;
     APP.scenario=s;
     const nextVariants=(SCENARIOS[s]&&SCENARIOS[s].variants)||{};
-    if(!nextVariants[APP.variant]) APP.variant='capped';
+    if(!nextVariants[APP.variant]){
+      APP.variant = VARIANT_ORDER.find(k=>nextVariants[k]) || Object.keys(nextVariants).find(k=>nextVariants[k]) || 'r03_capped';
+    }
     loadVariant(true);
     upd();
   }));
@@ -466,7 +491,7 @@ function renderRiskTabs(){
 
 function renderModelTabs(){
   const box=document.getElementById('modelTabs');
-  const ordered=['capped','uncapped','brokerage_only'];
+  const ordered=VARIANT_ORDER;
   const variants=activeVariants();
   const keys=[...new Set([...ordered,...Object.keys(variants)])].filter(k=>variants[k]);
   box.innerHTML=keys.map(k=>`<button data-v="${k}" class="fb ${APP.variant===k?'sel':''}">${variantLabel(k,variants[k])}</button>`).join('');
@@ -556,9 +581,9 @@ function renderTradeRow(st){
     kc('ROC',pct(st.roc),'',st.roc>=0?'cg':'cr'),
     kc('Net P&amp;L',rs(st.net),'',st.net>=0?'cg':'cr'),
     kc('Gross P&amp;L',rs(st.gross),'',st.gross>=0?'cg':'cr'),
-    kc('Total Charges',rs(st.chg),'','cr'),
+    kc('Brokerage',rs(st.brk),'','co'),
+    kc('Government Charges',rs(st.gov),'','cr'),
     kc('Final Capital',rs(st.fc),'',st.fc>=n(RAW.summary?.initialCapital)?'cg':'cr'),
-    kc('Max Consec Streak',`${st.mdc}`,'','cp'),
   ].join('');
 }
 
