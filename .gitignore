@@ -1,0 +1,12 @@
+# Sensitive / live-trading files
+*.py
+*.txt
+*.json
+*.xlsx
+*.log
+*.err.log
+*.out.log
+*.csv
+__pycache__/
+*.pyc
+.env
