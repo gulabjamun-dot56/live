@@ -140,6 +140,8 @@ tr:hover td { background: var(--s2); }
     <div class="badges" id="badges"></div>
   </div>
 
+  <div class="vtrow" id="modelTabs"></div>
+
   <div class="fbar" id="fbar">
     <span class="flbl">Start Date</span>
     <input id="startDate" type="date" />
@@ -220,7 +222,8 @@ tr:hover td { background: var(--s2); }
 
 </div>
 <script>
-const RAW = window.COMBINED_REPORT_DATA || {};
+const ROOT = window.COMBINED_REPORT_DATA || {};
+const VARIANTS = ROOT.variants || {};
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const WD  = ['Mon','Tue','Wed','Thu','Fri'];
 
@@ -233,40 +236,89 @@ function rs(v){
 function pct(v){ return `${n(v).toFixed(2)}%`; }
 function pd(s){ if(!s) return null; const d=new Date(s+'T00:00:00'); return isNaN(d)?null:d; }
 
-const days=(Array.isArray(RAW.dayStats)?RAW.dayStats:[]).map(r=>{
-  const dt=pd(String(r.date||'')); if(!dt) return null;
-  return {
-    date:String(r.date), dt,
-    year:dt.getFullYear(),
-    month:`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`,
-    dayName:DOW[dt.getDay()],
-    signals:n(r.signals), trades:n(r.trades), wins:n(r.wins), losses:n(r.losses),
-    pnl:n(r.pnl), gross:n(r.gross), charges:n(r.charges),
-    riskBudget:n(r.riskBudget), equity:n(r.equity),
-  };
-}).filter(Boolean).sort((a,b)=>a.dt-b.dt);
+function emptyPayload(){
+  return { portfolioConfig:{}, summary:{initialCapital:0}, dayStats:[], trades:[], dateRange:{min:'',max:''} };
+}
 
-const trades=(Array.isArray(RAW.trades)?RAW.trades:[]).map(r=>{
-  const dt=pd(String(r.date||''));
-  return {
-    date:String(r.date), dt, year:dt?dt.getFullYear():null,
-    dayName:dt?DOW[dt.getDay()]:'',
-    entryTime:String(r.entryTime||''), strategyId:String(r.strategyId||''),
-    symbol:String(r.symbol||''), direction:String(r.direction||''),
-    qty:n(r.qty), entryPrice:n(r.entryPrice), exitPrice:n(r.exitPrice),
-    exitReason:String(r.exitReason||''), grossPnl:n(r.grossPnl),
-    charges:n(r.charges), pnl:n(r.pnl),
-  };
-});
+if(!Object.keys(VARIANTS).length){
+  VARIANTS.capped = emptyPayload();
+}
 
-const DR=RAW.dateRange||{};
-const ST={
-  s:String(DR.min||(days[0]?days[0].date:'')),
-  e:String(DR.max||(days.length?days[days.length-1].date:'')),
-  mode:'only', days:new Set(), year:'all', view:'monthly',
+const APP={
+  variant:(typeof ROOT.defaultVariant==='string'&&VARIANTS[ROOT.defaultVariant])
+    ? ROOT.defaultVariant
+    : (Object.keys(VARIANTS)[0]||'capped'),
 };
 
+let RAW=emptyPayload();
+let days=[];
+let trades=[];
+let DR={};
+let ST=null;
 let eqChart=null, barChart=null;
+
+function variantLabel(id,payload){
+  const cfg=(payload&&payload.portfolioConfig)||{};
+  const bm=cfg.brokerageModel||{};
+  if(String(bm.label||'').trim()) return String(bm.label);
+  return id==='uncapped' ? '0.03% per order uncapped' : '0.03% per order with Rs 20 cap';
+}
+
+function parseDays(raw){
+  return (Array.isArray(raw.dayStats)?raw.dayStats:[]).map(r=>{
+    const dt=pd(String(r.date||'')); if(!dt) return null;
+    return {
+      date:String(r.date), dt,
+      year:dt.getFullYear(),
+      month:`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`,
+      dayName:DOW[dt.getDay()],
+      signals:n(r.signals), trades:n(r.trades), wins:n(r.wins), losses:n(r.losses),
+      pnl:n(r.pnl), gross:n(r.gross), charges:n(r.charges),
+      riskBudget:n(r.riskBudget), equity:n(r.equity),
+    };
+  }).filter(Boolean).sort((a,b)=>a.dt-b.dt);
+}
+
+function parseTrades(raw){
+  return (Array.isArray(raw.trades)?raw.trades:[]).map(r=>{
+    const dt=pd(String(r.date||''));
+    return {
+      date:String(r.date), dt, year:dt?dt.getFullYear():null,
+      dayName:dt?DOW[dt.getDay()]:'',
+      entryTime:String(r.entryTime||''), strategyId:String(r.strategyId||''),
+      symbol:String(r.symbol||''), direction:String(r.direction||''),
+      qty:n(r.qty), entryPrice:n(r.entryPrice), exitPrice:n(r.exitPrice),
+      exitReason:String(r.exitReason||''), grossPnl:n(r.grossPnl),
+      charges:n(r.charges), pnl:n(r.pnl),
+    };
+  });
+}
+
+function initState(resetSelection){
+  const minDate=String(DR.min||(days[0]?days[0].date:''));
+  const maxDate=String(DR.max||(days.length?days[days.length-1].date:''));
+
+  if(!ST||resetSelection){
+    ST={ s:minDate, e:maxDate, mode:'only', days:new Set(), year:'all', view:'monthly' };
+    return;
+  }
+
+  const sDate=pd(ST.s), eDate=pd(ST.e), minD=pd(minDate), maxD=pd(maxDate);
+  if(!ST.s || !sDate || (minD&&sDate<minD)) ST.s=minDate;
+  if(!ST.e || !eDate || (maxD&&eDate>maxD)) ST.e=maxDate;
+  if(pd(ST.s)&&pd(ST.e)&&pd(ST.s)>pd(ST.e)){ ST.s=minDate; ST.e=maxDate; }
+
+  const validYears=new Set(days.map(r=>String(r.year)));
+  if(ST.year!=='all'&&!validYears.has(String(ST.year))) ST.year='all';
+}
+
+function loadVariant(resetSelection){
+  RAW=VARIANTS[APP.variant]||emptyPayload();
+  days=parseDays(RAW);
+  trades=parseTrades(RAW);
+  DR=RAW.dateRange||{};
+  initState(resetSelection);
+}
 
 function fdays(){
   const s=pd(ST.s), e=pd(ST.e);
@@ -351,10 +403,26 @@ function summarize(rows){
 
 function kc(k,v,s,cls){ return `<div class="kc ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||''}</div></div>`; }
 
+function renderModelTabs(){
+  const box=document.getElementById('modelTabs');
+  const ordered=['capped','uncapped'];
+  const keys=[...new Set([...ordered,...Object.keys(VARIANTS)])].filter(k=>VARIANTS[k]);
+  box.innerHTML=keys.map(k=>`<button data-v="${k}" class="fb ${APP.variant===k?'sel':''}">${variantLabel(k,VARIANTS[k])}</button>`).join('');
+  box.querySelectorAll('[data-v]').forEach(b=>b.addEventListener('click',()=>{
+    const v=b.dataset.v;
+    if(!v||!VARIANTS[v]||v===APP.variant) return;
+    APP.variant=v;
+    loadVariant(true);
+    upd();
+  }));
+}
+
 function renderHeader(){
   const cfg=RAW.portfolioConfig||{};
+  const lev=cfg.strategyLeverageSplit||{};
+  const brokerageText=variantLabel(APP.variant,RAW);
   document.getElementById('sub').textContent=
-    `Combined S1+S2 | Flat (No Compounding) | Capital \u20b9${new Intl.NumberFormat('en-IN').format(n(cfg.capital))} | Daily Risk ${(n(cfg.dailyRiskPct)*100).toFixed(2)}% | S1 ${cfg.strategyLeverageSplit?.s1||0}x | S2 ${cfg.strategyLeverageSplit?.s2||0}x`;
+    `Combined S1+S2 | Flat (No Compounding) | Brokerage ${brokerageText} | Capital \u20b9${new Intl.NumberFormat('en-IN').format(n(cfg.capital))} | Daily Risk ${(n(cfg.dailyRiskPct)*100).toFixed(2)}% | S1 ${lev.s1||0}x | S2 ${lev.s2||0}x`;
   document.getElementById('badges').innerHTML=
     ['S1: 30% EOD (E8)','S2: 70% EOD (E4)','Shared daily SL risk','Qty = min(SL risk, cap)',`Generated: ${cfg.generatedAt||''}`]
     .map(t=>`<span class="badge">${t}</span>`).join('');
@@ -390,7 +458,6 @@ function renderRow1(st){
 }
 
 function renderRow2(st){
-  // remove any old row2 inserted dynamically and refresh
   const el=document.getElementById('row2');
   el.innerHTML=[
     kc('Max Winning Streak',`${st.mw}`,'Daily','cg'),
@@ -537,6 +604,8 @@ function upd(){
   const st=summarize(rows);
   const tr=ftrades();
 
+  renderModelTabs();
+  renderHeader();
   renderYbar();
   renderDayBtns();
   renderRow1(st);
@@ -570,7 +639,7 @@ function bind(){
   document.getElementById('btnDaily').addEventListener('click',()=>{ST.view='daily';upd();});
 }
 
-renderHeader();
+loadVariant(true);
 bind();
 upd();
 </script>
