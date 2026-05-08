@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="report_data.js?v=20260507074040"></script>
+<script src="report_data.js?v=20260508052522"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -227,7 +227,10 @@ const ROOT = window.COMBINED_REPORT_DATA || {};
 const SCENARIOS = ROOT.scenarios || {};
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const WD  = ['Mon','Tue','Wed','Thu','Fri'];
-const VARIANT_ORDER = ['r03_capped','r03_uncapped','r04_capped','r04_uncapped','r05_capped','r05_uncapped'];
+const VARIANT_ORDER = [
+  'r03_capped','r03_uncapped','r04_capped','r04_uncapped','r05_capped','r05_uncapped',
+  'r03_capped_p4x','r03_uncapped_p4x','r04_capped_p4x','r04_uncapped_p4x','r05_capped_p4x','r05_uncapped_p4x'
+];
 
 function n(v){ const x=Number(v||0); return isFinite(x)?x:0; }
 function rs(v){
@@ -244,7 +247,11 @@ function emptyPayload(){
 
 function scenarioLabel(id, scenario){
   if(scenario && typeof scenario.label === 'string' && scenario.label.trim()) return scenario.label;
-  return id === '2l_5pct' ? '2L - 5% Risk' : '2L - 3% Risk';
+  if(id === '2l_3pct') return '2L - 3% Risk';
+  if(id === '2l_5pct') return '2L - 5% Risk';
+  if(id === '5l_3pct') return '5L - 3% Risk';
+  if(id === '5l_5pct') return '5L - 5% Risk';
+  return id;
 }
 
 function normalizeScenario(raw){
@@ -258,6 +265,12 @@ function normalizeScenario(raw){
       r04_uncapped: variants.r04_uncapped || emptyPayload(),
       r05_capped: variants.r05_capped || emptyPayload(),
       r05_uncapped: variants.r05_uncapped || emptyPayload(),
+      r03_capped_p4x: variants.r03_capped_p4x || variants.p4x_r03_capped || emptyPayload(),
+      r03_uncapped_p4x: variants.r03_uncapped_p4x || variants.p4x_r03_uncapped || emptyPayload(),
+      r04_capped_p4x: variants.r04_capped_p4x || variants.p4x_r04_capped || emptyPayload(),
+      r04_uncapped_p4x: variants.r04_uncapped_p4x || variants.p4x_r04_uncapped || emptyPayload(),
+      r05_capped_p4x: variants.r05_capped_p4x || variants.p4x_r05_capped || emptyPayload(),
+      r05_uncapped_p4x: variants.r05_uncapped_p4x || variants.p4x_r05_uncapped || emptyPayload(),
     },
   };
 }
@@ -273,6 +286,12 @@ if(!Object.keys(SCENARIOS).length){
       r04_uncapped: legacyVariants.r04_uncapped || emptyPayload(),
       r05_capped: legacyVariants.r05_capped || emptyPayload(),
       r05_uncapped: legacyVariants.r05_uncapped || emptyPayload(),
+      r03_capped_p4x: legacyVariants.r03_capped_p4x || emptyPayload(),
+      r03_uncapped_p4x: legacyVariants.r03_uncapped_p4x || emptyPayload(),
+      r04_capped_p4x: legacyVariants.r04_capped_p4x || emptyPayload(),
+      r04_uncapped_p4x: legacyVariants.r04_uncapped_p4x || emptyPayload(),
+      r05_capped_p4x: legacyVariants.r05_capped_p4x || emptyPayload(),
+      r05_uncapped_p4x: legacyVariants.r05_uncapped_p4x || emptyPayload(),
     },
   };
 }
@@ -310,19 +329,30 @@ function activeVariants(){
     r04_uncapped: emptyPayload(),
     r05_capped: emptyPayload(),
     r05_uncapped: emptyPayload(),
+    r03_capped_p4x: emptyPayload(),
+    r03_uncapped_p4x: emptyPayload(),
+    r04_capped_p4x: emptyPayload(),
+    r04_uncapped_p4x: emptyPayload(),
+    r05_capped_p4x: emptyPayload(),
+    r05_uncapped_p4x: emptyPayload(),
   };
 }
 
 function variantLabel(id,payload){
   const cfg=(payload&&payload.portfolioConfig)||{};
   const bm=cfg.brokerageModel||{};
-  if(String(bm.label||'').trim()) return String(bm.label);
-  if(id==='r03_uncapped') return '0.03% per order uncapped';
-  if(id==='r04_capped') return '0.04% per order with Rs 20 cap';
-  if(id==='r04_uncapped') return '0.04% per order uncapped';
-  if(id==='r05_capped') return '0.05% per order with Rs 20 cap';
-  if(id==='r05_uncapped') return '0.05% per order uncapped';
-  return '0.03% per order with Rs 20 cap';
+  const isP4x=String(id||'').endsWith('_p4x');
+  const baseId=isP4x?String(id).slice(0,-4):String(id||'');
+
+  let baseLabel='0.03% per order with Rs 20 cap';
+  if(baseId==='r03_uncapped') baseLabel='0.03% per order uncapped';
+  if(baseId==='r04_capped') baseLabel='0.04% per order with Rs 20 cap';
+  if(baseId==='r04_uncapped') baseLabel='0.04% per order uncapped';
+  if(baseId==='r05_capped') baseLabel='0.05% per order with Rs 20 cap';
+  if(baseId==='r05_uncapped') baseLabel='0.05% per order uncapped';
+
+  const lbl=String(bm.label||'').trim() || baseLabel;
+  return isP4x ? `${lbl} | Priority 4x` : lbl;
 }
 
 function parseDays(raw){
@@ -473,7 +503,7 @@ function kc(k,v,s,cls){ return `<div class="kc ${cls}"><div class="k">${k}</div>
 
 function renderRiskTabs(){
   const box=document.getElementById('riskTabs');
-  const ordered=['2l_3pct','2l_5pct'];
+  const ordered=['2l_3pct','2l_5pct','5l_3pct','5l_5pct'];
   const keys=[...new Set([...ordered,...Object.keys(SCENARIOS)])].filter(k=>SCENARIOS[k]);
   box.innerHTML=keys.map(k=>`<button data-s="${k}" class="fb ${APP.scenario===k?'sel':''}">${scenarioLabel(k,SCENARIOS[k])}</button>`).join('');
   box.querySelectorAll('[data-s]').forEach(b=>b.addEventListener('click',()=>{
@@ -509,10 +539,15 @@ function renderHeader(){
   const lev=cfg.strategyLeverageSplit||{};
   const brokerageText=variantLabel(APP.variant,RAW);
   const scenarioText=scenarioLabel(APP.scenario,SCENARIOS[APP.scenario]);
+  const s2PriorityOn=Boolean(cfg.s2PriorityMode);
+  const s2PriorityText=s2PriorityOn?`S2 Priority ON (${n(cfg.s2PriorityLeverage).toFixed(2)}x)`:'S2 Priority OFF';
   document.getElementById('sub').textContent=
-    `Combined S1+S2 | Flat (No Compounding) | Mode ${scenarioText} | Brokerage ${brokerageText} | Capital \u20b9${new Intl.NumberFormat('en-IN').format(n(cfg.capital))} | Daily Risk ${(n(cfg.dailyRiskPct)*100).toFixed(2)}% | S1 ${lev.s1||0}x | S2 ${lev.s2||0}x`;
+    `Combined S1+S2 | Flat (No Compounding) | Mode ${scenarioText} | Brokerage ${brokerageText} | Capital \u20b9${new Intl.NumberFormat('en-IN').format(n(cfg.capital))} | Daily Risk ${(n(cfg.dailyRiskPct)*100).toFixed(2)}% | S1 ${lev.s1||0}x | S2 ${lev.s2||0}x | ${s2PriorityText}`;
+  const priorityBadge=s2PriorityOn
+    ? `S2 priority: skip S1 when S2 exists (${n(cfg.s2PriorityLeverage).toFixed(2)}x)`
+    : 'Normal combined S1+S2 flow';
   document.getElementById('badges').innerHTML=
-    ['S1: 30% EOD (E8)','S2: 70% EOD (E4)','Shared daily SL risk','Qty = min(SL risk, cap)',`Generated: ${cfg.generatedAt||''}`]
+    ['S1: 30% EOD (E8)','S2: 70% EOD (E4)','Shared daily SL risk','Qty = min(SL risk, cap)',priorityBadge,`Generated: ${cfg.generatedAt||''}`]
     .map(t=>`<span class="badge">${t}</span>`).join('');
 }
 
